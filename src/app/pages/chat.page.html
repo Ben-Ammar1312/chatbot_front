@@ -1,0 +1,94 @@
+<mat-toolbar class="topbar" color="primary">
+  <div class="brand">
+    <img class="brand-logo" src="/logo.webp" alt="ComparezAssurez" />
+  </div>
+
+  <span class="spacer"></span>
+
+  <button mat-button type="button" (click)="newSession()">
+    <mat-icon>restart_alt</mat-icon>
+    Nouvelle session
+  </button>
+</mat-toolbar>
+
+<div class="page">
+  <mat-card class="chat-card">
+    <div class="chat-header">
+      <div class="chat-title">Assistant</div>
+      <div class="chat-subtitle">Sécurisé • Rapide • Pas à pas</div>
+    </div>
+
+    <div id="chat-scroll" class="chat-body" #chatScroll>
+      @for (m of messages(); track m.id) {
+        <div class="msg-row" [class.me]="m.role === 'user'">
+          @if (m.role === 'assistant') {
+            <div class="avatar">
+              <img src="/photo.png" alt="Conseiller ComparezAssurez" />
+            </div>
+          }
+          <div class="bubble" [class.me]="m.role === 'user'">
+            <div class="text">{{ m.text }}</div>
+            <div class="meta">{{ m.ts | date:'shortTime' }}</div>
+          </div>
+        </div>
+      }
+    </div>
+
+    @if (quickReplies().length) {
+      <div class="quick-replies">
+        @for (opt of quickReplies(); track opt) {
+          <button
+            mat-stroked-button
+            type="button"
+            (click)="sendQuickReply(opt)"
+            [disabled]="sending() || isDone()"
+          >
+            {{ opt }}
+          </button>
+        }
+      </div>
+    }
+
+    @if (isDone()) {
+      <div class="cta">
+        <a
+          mat-raised-button
+          color="primary"
+          href="https://comparezassurez.fr/"
+          target="_blank"
+          rel="noopener"
+        >
+          Accéder au site comparezassurez.fr
+        </a>
+      </div>
+    }
+
+    <div class="composer">
+      <div class="composer-row">
+        <mat-form-field appearance="outline" class="input">
+          <mat-label>Votre message</mat-label>
+          <input
+            matInput
+            [ngModel]="input()"
+            (ngModelChange)="input.set($event)"
+            (keydown.enter)="send()"
+            [disabled]="sending() || isDone()"
+            [type]="inputType()"
+          />
+        </mat-form-field>
+
+        <button
+          mat-fab
+          color="primary"
+          class="send"
+          type="button"
+          (click)="send()"
+          [disabled]="sending() || isDone() || !input().trim()"
+          matTooltip="Envoyer"
+        >
+          <mat-icon>send</mat-icon>
+        </button>
+      </div>
+    </div>
+  </mat-card>
+</div>
