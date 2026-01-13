@@ -15,7 +15,7 @@
   <mat-card class="chat-card">
     <div class="chat-header">
       <div class="chat-title">Assistant</div>
-      <div class="chat-subtitle">Sécurisé • Rapide • Pas à pas</div>
+      <div class="chat-subtitle">Sécurisé — Rapide — Pas à pas</div>
     </div>
 
     <div id="chat-scroll" class="chat-body" #chatScroll>
@@ -34,7 +34,29 @@
       }
     </div>
 
-    @if (quickReplies().length) {
+    @if (showOfferCards()) {
+      <div class="offers">
+        @for (card of offerCards(); track card.value) {
+          <button
+            class="offer-card"
+            type="button"
+            (click)="sendQuickReply(card.value)"
+            [disabled]="sending() || isDone()"
+          >
+            <div class="offer-eyebrow">Mutuelle</div>
+            <div class="offer-title">{{ card.title }}</div>
+            <div class="offer-subtitle">{{ card.subtitle }}</div>
+            <ul class="offer-features">
+              @for (feat of card.features; track feat) {
+                <li>{{ feat }}</li>
+              }
+            </ul>
+            <div class="offer-price">{{ card.price }}</div>
+            <div class="offer-cta">Choisir cette offre</div>
+          </button>
+        }
+      </div>
+    } @else if (quickReplies().length) {
       <div class="quick-replies">
         @for (opt of quickReplies(); track opt) {
           <button

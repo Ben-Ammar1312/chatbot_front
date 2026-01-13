@@ -18,6 +18,16 @@ export interface ChatResponse {
   input_type: string;
 }
 
+export interface ReminderRequest {
+  conversation_id?: string | null;
+  last_assistant_message?: string | null;
+}
+
+export interface ReminderResponse {
+  response: string;
+  conversation_id?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ChatApiService {
   // With proxy: /api/... will be forwarded to http://localhost:8080
@@ -28,5 +38,9 @@ export class ChatApiService {
   sendMessage(payload: ChatRequest): Observable<ChatResponse> {
     // Adjust path to match your Spring controller mapping
     return this.http.post<ChatResponse>(`${this.baseUrl}/chat`, payload);
+  }
+
+  sendReminder(payload: ReminderRequest): Observable<ReminderResponse> {
+    return this.http.post<ReminderResponse>(`${this.baseUrl}/reminder`, payload);
   }
 }

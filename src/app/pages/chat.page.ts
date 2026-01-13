@@ -11,7 +11,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs/operators';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -22,9 +22,17 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { ChatApiService, ReminderResponse } from '../services/chat-api.service';
 
 type Role = 'assistant' | 'user';
 type ChatOption = string | { label?: string; value?: string };
+type OfferCard = {
+  value: string;
+  title: string;
+  subtitle: string;
+  features: string[];
+  price: string;
+};
 
 const makeId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -34,12 +42,39 @@ const makeId = () => {
 };
 
 const INITIAL_PROMPT =
-  'Bonjour ! En 30 secondes, je vois si on peut baisser votre cotisation ou améliorer vos garanties.\nVotre priorité ?';
+  'Bonjour ! En 30 secondes, nous voyons si on peut baisser vos cotisations ou améliorer vos garanties.\nQuelle est votre priorité ?';
 const INITIAL_OPTIONS = [
   'Faire baisser les cotisations',
   'Améliorer/optimiser les garanties',
 ];
 const REMINDER_DELAY_MS = 30_000;
+const OFFER_NAMES = ['Zen Santé Évolutive', 'FMA Vitalia'];
+const OFFER_CARDS: OfferCard[] = [
+  {
+    value: OFFER_NAMES[0],
+    title: OFFER_NAMES[0],
+    subtitle: 'Zen',
+    features: [
+      'Accès aux médecines douces pour un bien-être optimal',
+      'Réseaux Kalixia pour des soins de qualité',
+      'Téléconsultation illimitée',
+      'Chambre particulière & transports',
+    ],
+    price: 'À partir de 29 €/mois',
+  },
+  {
+    value: OFFER_NAMES[1],
+    title: OFFER_NAMES[1],
+    subtitle: 'FMA',
+    features: [
+      'Garantie frais réel hospitalisation',
+      'Frais réel hospitalisation',
+      'Tiers payant',
+      'Service à domicile',
+    ],
+    price: 'À partir de 29 €/mois',
+  },
+];
 
 export interface ChatMessage {
   id: string;
@@ -57,11 +92,6 @@ interface ChatResponse {
   phase?: string;
   options?: ChatOption[];
   input_type?: string;
-}
-
-interface ReminderResponse {
-  response: string;
-  conversation_id?: string;
 }
 
 @Component({
@@ -84,7 +114,7 @@ interface ReminderResponse {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ChatPage implements AfterViewInit {
-  private readonly http = inject(HttpClient);
+  private readonly chatApi = inject(ChatApiService);
   @ViewChild('chatScroll') private chatScroll?: ElementRef<HTMLDivElement>;
   private reminderTimer: ReturnType<typeof setTimeout> | null = null;
   private reminderForAssistantId: string | null = null;
@@ -107,6 +137,12 @@ export class ChatPage implements AfterViewInit {
   readonly quickReplies = signal<string[]>([...INITIAL_OPTIONS]);
   readonly inputType = signal<string>('text');
   readonly phase = signal<string | null>(null);
+  readonly offerCards = computed(() => {
+    const options = this.quickReplies();
+    if (!this.isOfferOptions(options)) return [];
+    return OFFER_CARDS;
+  });
+  readonly showOfferCards = computed(() => this.offerCards().length > 0);
 
   // Optional: derived state
   readonly isDone = computed(() => this.phase() === 'DONE');
@@ -156,7 +192,7 @@ export class ChatPage implements AfterViewInit {
   }
 
   send(textOverride?: string): void {
-    const text = (textOverride ?? this.input()).trim();
+    const text = this.normalizeMessageText((textOverride ?? this.input()).trim());
     if (!text || this.sending() || this.isDone()) return;
 
     this.error.set(null);
@@ -167,7 +203,7 @@ export class ChatPage implements AfterViewInit {
     // 1) Append user message
     this.messages.update((list) => [
       ...list,
-      { id: makeId(), role: 'user', text, ts: new Date() },
+      { id: makeId(), role: 'user', text: this.normalizeMessageText(text), ts: new Date() },
     ]);
 
     // 2) Clear input immediately
@@ -181,8 +217,8 @@ export class ChatPage implements AfterViewInit {
     };
 
     // 4) Call backend (proxy /api/chat should forward to your real backend)
-    this.http
-      .post<ChatResponse>('/api/chat', payload)
+    this.chatApi
+      .sendMessage(payload)
       .pipe(finalize(() => this.sending.set(false)))
       .subscribe({
         next: (res) => {
@@ -193,7 +229,7 @@ export class ChatPage implements AfterViewInit {
           this.phase.set(res?.phase ?? null);
 
           // Append assistant message
-          const reply = (res?.response ?? '').trim();
+          const reply = this.normalizeMessageText((res?.response ?? '').trim());
           if (reply) {
             this.addAssistantMessage(reply);
           } else {
@@ -219,7 +255,7 @@ export class ChatPage implements AfterViewInit {
             {
               id: makeId(),
               role: 'assistant',
-              text: `Erreur : ${msg}`,
+              text: this.normalizeMessageText(`Erreur : ${msg}`),
               ts: new Date(),
             },
           ]);
@@ -256,6 +292,8 @@ export class ChatPage implements AfterViewInit {
   }
 
   private normalizeInputType(value?: string): string {
+    const allowed = new Set(['text', 'tel', 'email', 'number']);
+    if (value && allowed.has(value)) return value;
     return 'text';
   }
 
@@ -263,7 +301,7 @@ export class ChatPage implements AfterViewInit {
     const message: ChatMessage = {
       id: makeId(),
       role: 'assistant',
-      text,
+      text: this.normalizeMessageText(text),
       ts: new Date(),
     };
     this.messages.update((list) => [...list, message]);
@@ -300,7 +338,7 @@ export class ChatPage implements AfterViewInit {
       conversation_id: this.conversationId(),
       last_assistant_message: message.text,
     };
-    this.http.post<ReminderResponse>('/api/reminder', payload).subscribe({
+    this.chatApi.sendReminder(payload).subscribe({
       next: (res) => {
         const reply = (res?.response ?? '').trim();
         if (reply) {
@@ -321,5 +359,27 @@ export class ChatPage implements AfterViewInit {
     const el = this.chatScroll?.nativeElement;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
+  }
+
+  private isOfferOptions(options: string[]): boolean {
+    if (!options || options.length < 2) return false;
+    return OFFER_NAMES.every((name) => options.includes(name));
+  }
+
+  private normalizeMessageText(text: string): string {
+    const trimmed = text.trim();
+    if (trimmed.length < 2) return text;
+    const isQuoted = trimmed.startsWith('"') && trimmed.endsWith('"');
+    const isSmartQuoted = trimmed.startsWith('“') && trimmed.endsWith('”');
+    if (!isQuoted && !isSmartQuoted) return text;
+    if (isQuoted) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'string') return parsed;
+      } catch {
+        // Ignore parse errors and fall back to slicing.
+      }
+    }
+    return trimmed.slice(1, -1);
   }
 }
